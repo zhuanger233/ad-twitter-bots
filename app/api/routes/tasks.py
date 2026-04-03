@@ -20,7 +20,7 @@ class ProcessTaskRequest(BaseModel):
 
 
 class TaskResponse(BaseModel):
-    id: str
+    id: UUID
     request_id: str
     status: str
     stage: str
