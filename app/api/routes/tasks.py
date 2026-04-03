@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -11,6 +12,7 @@ from app.db.repositories.subtitle_task_repo import SubtitleTaskRepository
 from app.services.pipeline.orchestrator import PipelineOrchestrator
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
+logger = logging.getLogger(__name__)
 
 
 class ProcessTaskRequest(BaseModel):
@@ -32,12 +34,14 @@ class TaskResponse(BaseModel):
 
 @router.post("/process", response_model=TaskResponse, status_code=status.HTTP_202_ACCEPTED)
 def process_task(payload: ProcessTaskRequest, db: Session = Depends(get_db)) -> TaskResponse:
+    logger.info("manual process request mention_tweet_id=%s video_tweet_id=%s request_user_id=%s", payload.mention_tweet_id, payload.video_tweet_id or "-", payload.request_user_id or "-")
     orchestrator = PipelineOrchestrator(db)
     task = orchestrator.enqueue_manual(
         mention_tweet_id=payload.mention_tweet_id,
         video_tweet_id=payload.video_tweet_id,
         request_user_id=payload.request_user_id,
     )
+    logger.info("manual process queued task_id=%s status=%s stage=%s", task.id, task.status, task.stage)
     return TaskResponse.model_validate(task, from_attributes=True)
 
 
@@ -47,6 +51,7 @@ def get_task(task_id: UUID, db: Session = Depends(get_db)) -> TaskResponse:
     task = repo.get(task_id)
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    logger.info("manual process queued task_id=%s status=%s stage=%s", task.id, task.status, task.stage)
     return TaskResponse.model_validate(task, from_attributes=True)
 
 

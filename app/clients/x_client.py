@@ -1,6 +1,7 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
+import logging
 from typing import Any
 
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -8,6 +9,9 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from app.core.constants import ErrorCode
 from app.core.config import get_settings
 from app.core.exceptions import NoVideoFoundError, XClientError
+
+
+logger = logging.getLogger(__name__)
 
 
 class XClient:
@@ -61,6 +65,12 @@ class XClient:
     @retry(wait=wait_exponential(min=1, max=10), stop=stop_after_attempt(3), reraise=True)
     def fetch_recent_mentions(self, limit: int, since_id: str | None = None) -> list[dict[str, Any]]:
         bot_user_id = self.get_bot_user_id()
+        logger.info(
+            "polling X mentions bot_user_id=%s limit=%s since_id=%s",
+            bot_user_id,
+            min(limit, 100),
+            since_id or "-",
+        )
         response = self.client.get_users_mentions(
             id=bot_user_id,
             max_results=min(limit, 100),
@@ -85,6 +95,11 @@ class XClient:
                 }
             )
         results.sort(key=lambda item: int(item["id"]))
+        logger.info(
+            "fetched mentions count=%s ids=%s",
+            len(results),
+            [str(item["id"]) for item in results],
+        )
         return results
 
     @retry(wait=wait_exponential(min=1, max=10), stop=stop_after_attempt(3), reraise=True)
