@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     x_bearer_token: str = ""
     x_bot_username: str = ""
     x_bot_user_id: str = ""
+    x_webhook_validation_enabled: bool = True
 
     elevenlabs_api_key: str = ""
     elevenlabs_model_id: str = "scribe_v2"
