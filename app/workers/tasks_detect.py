@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.services.detector.polling import MentionPollingService
 from app.workers.celery_app import celery_app
@@ -7,6 +8,9 @@ from app.workers.celery_app import celery_app
 
 @celery_app.task(name="app.workers.tasks_detect.enqueue_poll_mentions")
 def enqueue_poll_mentions() -> int:
+    settings = get_settings()
+    if not settings.mention_polling_enabled:
+        return 0
     with SessionLocal() as session:
         service = MentionPollingService(session)
         return service.poll_once()

@@ -29,3 +29,13 @@ celery_app.conf.task_routes = {
     "app.workers.tasks_ffmpeg.*": {"queue": "queue_ffmpeg"},
     "app.workers.tasks_post.*": {"queue": "queue_post"},
 }
+
+if settings.mention_polling_enabled:
+    celery_app.conf.beat_schedule = {
+        "poll-x-mentions": {
+            "task": "app.workers.tasks_detect.enqueue_poll_mentions",
+            "schedule": float(settings.mention_poll_interval_seconds),
+        }
+    }
+else:
+    celery_app.conf.beat_schedule = {}

@@ -59,11 +59,12 @@ class XClient:
         )
 
     @retry(wait=wait_exponential(min=1, max=10), stop=stop_after_attempt(3), reraise=True)
-    def fetch_recent_mentions(self, limit: int) -> list[dict[str, Any]]:
+    def fetch_recent_mentions(self, limit: int, since_id: str | None = None) -> list[dict[str, Any]]:
         bot_user_id = self.get_bot_user_id()
         response = self.client.get_users_mentions(
             id=bot_user_id,
             max_results=min(limit, 100),
+            since_id=since_id,
             expansions=self.EXPANSIONS,
             tweet_fields=self.TWEET_FIELDS,
             media_fields=self.MEDIA_FIELDS,
@@ -83,6 +84,7 @@ class XClient:
                     "video_url": source["video_url"] if source else None,
                 }
             )
+        results.sort(key=lambda item: int(item["id"]))
         return results
 
     @retry(wait=wait_exponential(min=1, max=10), stop=stop_after_attempt(3), reraise=True)

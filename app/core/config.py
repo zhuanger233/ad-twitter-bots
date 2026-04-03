@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     hard_max_video_duration_seconds: float = 3600.0
     hard_max_filesize_mb: int = 512
 
+    mention_polling_enabled: bool = True
     mention_poll_interval_seconds: int = 60
     mention_lookback_limit: int = 20
 

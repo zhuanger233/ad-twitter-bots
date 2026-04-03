@@ -32,6 +32,22 @@ services:
     networks:
       - default
 
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: twitter_subtitle_bot_beat
+    command: ["celery", "-A", "app.workers.celery_app.celery_app", "beat", "--loglevel=INFO"]
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - default
+
   redis:
     image: redis:7-alpine
     ports:
