@@ -5,6 +5,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.clients.redis_client import get_redis_client
+from app.core.constants import TaskStatus
 from app.db.models.subtitle_task import SubtitleTask
 from app.db.repositories.subtitle_task_repo import SubtitleTaskRepository
 from app.services.pipeline.idempotency import build_dedupe_key, should_skip_duplicate
@@ -23,6 +24,8 @@ class PipelineOrchestrator:
         with self.redis.lock(lock_key, timeout=15, blocking_timeout=5):
             existing = self.repo.get_by_dedupe_key(dedupe_key)
             if existing and should_skip_duplicate(existing.status):
+                if existing.status == TaskStatus.QUEUED.value:
+                    run_pipeline.delay(str(existing.id))
                 return existing
             task = self.repo.create(
                 request_id=uuid.uuid4().hex,
