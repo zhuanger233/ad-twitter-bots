@@ -1,5 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -7,19 +8,21 @@ from sqlalchemy.orm import Session
 from app.clients.r2_client import R2Client
 from app.clients.x_client import XClient
 from app.core.config import get_settings
-from app.core.constants import TaskStage, TaskStatus
+from app.core.constants import ASREngine, TaskStage, TaskStatus
 from app.core.exceptions import AppError
 from app.db.models.subtitle_task import SubtitleTask
 from app.db.repositories.subtitle_task_repo import SubtitleTaskRepository
 from app.db.session import SessionLocal
+from app.services.asr.elevenlabs_provider import ElevenLabsASRProvider
+from app.services.asr.whisper_provider import WhisperASRProvider
 from app.services.media.downloader import VideoDownloader
+from app.services.media.ffmpeg_burner import FFmpegBurner
 from app.services.media.inspector import FFprobeInspector
 from app.services.media.tempfiles import TaskWorkspace
 from app.services.pipeline.router import ASRRouter
+from app.services.reply.tweet_replier import TweetReplier
+from app.services.subtitles.srt_writer import write_srt
 from app.workers.celery_app import celery_app
-from app.workers.tasks_asr import transcribe_media
-from app.workers.tasks_ffmpeg import burn_subtitles, generate_srt
-from app.workers.tasks_post import upload_and_reply
 
 
 def _load_task(session: Session, task_id: str) -> tuple[SubtitleTaskRepository, SubtitleTask]:
@@ -65,13 +68,17 @@ def run_pipeline(self, task_id: str) -> str:
             repo.update_stage(task, stage=TaskStage.INSPECTED)
             repo.update_stage(task, stage=TaskStage.TRANSCRIBING)
 
-            transcription_payload = transcribe_media.delay(task.asr_engine, str(source_path)).get(timeout=3600)
+            if task.asr_engine == ASREngine.ELEVENLABS.value:
+                transcription_result = ElevenLabsASRProvider().transcribe(source_path)
+            else:
+                transcription_result = WhisperASRProvider().transcribe(source_path)
+
             srt_path = workspace.child("captions.srt")
-            generate_srt.delay(transcription_payload, str(srt_path)).get(timeout=120)
+            write_srt(transcription_result, srt_path, settings)
             repo.update_stage(task, stage=TaskStage.SUBTITLE_GENERATED)
 
             burned_path = workspace.child("output.mp4")
-            burn_subtitles.delay(str(source_path), str(srt_path), str(burned_path)).get(timeout=1800)
+            FFmpegBurner().burn(source_path, srt_path, burned_path)
             task.output_video_path = str(burned_path)
             session.add(task)
             session.commit()
@@ -84,9 +91,13 @@ def run_pipeline(self, task_id: str) -> str:
             session.refresh(task)
             repo.update_stage(task, stage=TaskStage.UPLOADED_BACKUP)
 
-            post_result = upload_and_reply.delay(task.mention_tweet_id, str(burned_path), "Subtitle generated. Attached processed video.").get(timeout=600)
-            task.x_media_id = post_result["media_id"]
-            task.reply_tweet_id = post_result["reply_tweet_id"]
+            media_id, reply_tweet_id = TweetReplier().upload_and_reply(
+                mention_tweet_id=task.mention_tweet_id,
+                output_video_path=Path(burned_path),
+                text="Subtitle generated. Attached processed video.",
+            )
+            task.x_media_id = media_id
+            task.reply_tweet_id = reply_tweet_id
             session.add(task)
             session.commit()
             session.refresh(task)
