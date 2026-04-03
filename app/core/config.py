@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     x_bot_user_id: str = ""
 
     elevenlabs_api_key: str = ""
+    elevenlabs_model_id: str = "scribe_v2"
     elevenlabs_timeout_seconds: float = 120.0
 
     whisper_model: str = "small"
