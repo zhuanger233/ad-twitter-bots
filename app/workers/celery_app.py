@@ -6,7 +6,19 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-celery_app = Celery("subtitle_bot", broker=settings.celery_broker_url, backend=settings.celery_result_backend)
+celery_app = Celery(
+    "subtitle_bot",
+    broker=settings.celery_broker_url,
+    backend=settings.celery_result_backend,
+    include=[
+        "app.workers.tasks_detect",
+        "app.workers.tasks_pipeline",
+        "app.workers.tasks_asr",
+        "app.workers.tasks_ffmpeg",
+        "app.workers.tasks_post",
+    ],
+)
+
 celery_app.conf.task_routes = {
     "app.workers.tasks_detect.*": {"queue": "queue_mentions"},
     "app.workers.tasks_pipeline.run_pipeline": {"queue": "queue_io"},
