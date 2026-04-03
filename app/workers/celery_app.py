@@ -9,6 +9,7 @@ settings = get_settings()
 celery_app = Celery("subtitle_bot", broker=settings.celery_broker_url, backend=settings.celery_result_backend)
 celery_app.conf.task_routes = {
     "app.workers.tasks_detect.*": {"queue": "queue_mentions"},
+    "app.workers.tasks_pipeline.run_pipeline": {"queue": "queue_io"},
     "app.workers.tasks_pipeline.resolve_video": {"queue": "queue_io"},
     "app.workers.tasks_pipeline.download_video": {"queue": "queue_io"},
     "app.workers.tasks_pipeline.inspect_video": {"queue": "queue_io"},
