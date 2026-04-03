@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.constants import TaskStage, TaskStatus
@@ -24,7 +25,14 @@ class SubtitleTaskRepository:
             priority=priority,
         )
         self.session.add(task)
-        self.session.commit()
+        try:
+            self.session.commit()
+        except IntegrityError:
+            self.session.rollback()
+            existing = self.get_by_dedupe_key(dedupe_key)
+            if existing is None:
+                raise
+            return existing
         self.session.refresh(task)
         return task
 
