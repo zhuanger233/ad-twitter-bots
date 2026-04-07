@@ -46,6 +46,7 @@ class XClient:
 
         self.settings = get_settings()
         self._cached_bot_user_id = self.settings.x_bot_user_id or None
+        self.last_mentions_meta: dict[str, Any] | None = None
         auth = tweepy.OAuth1UserHandler(
             self.settings.x_api_key,
             self.settings.x_api_secret,
@@ -81,7 +82,8 @@ class XClient:
         if since_id:
             request_kwargs["since_id"] = since_id
         response = self.client.get_users_mentions(**request_kwargs)
-        logger.info("X mentions response meta=%s", getattr(response, "meta", None))
+        self.last_mentions_meta = getattr(response, "meta", None)
+        logger.info("X mentions response meta=%s", self.last_mentions_meta)
         includes = self._normalize_includes(response.includes)
         tweets = response.data or []
         results: list[dict[str, Any]] = []
@@ -220,6 +222,15 @@ class XClient:
                 exc,
             )
             return None
+        source = self._find_video_source(root, root.get("includes", {}))
+        if source:
+            logger.info(
+                "found video from conversation root reference mention_tweet_id=%s conversation_id=%s video_tweet_id=%s",
+                mention_id,
+                conversation_id,
+                source["tweet_id"],
+            )
+            return source
         video_url = self._extract_video_url(root, root.get("includes", {}))
         if video_url:
             logger.info(

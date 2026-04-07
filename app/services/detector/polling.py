@@ -61,6 +61,34 @@ class MentionPollingService:
         logger.info("mention polling finished enqueued=%s new_since_id=%s", count, max_seen_id or since_id or "-")
         return count
 
+
+    def preview_once(self, ignore_since_id: bool = False) -> dict[str, object]:
+        since_id = None if ignore_since_id else self.get_since_id()
+        mentions = self.x_client.fetch_recent_mentions(
+            limit=self.settings.mention_lookback_limit,
+            since_id=since_id,
+        )
+        items: list[dict[str, str | None]] = []
+        for mention in mentions:
+            parsed = parse_mention_payload(mention)
+            items.append(
+                {
+                    "mention_tweet_id": str(mention.get("id")),
+                    "author_id": str(mention.get("author_id")) if mention.get("author_id") else None,
+                    "conversation_id": str(mention.get("conversation_id")) if mention.get("conversation_id") else None,
+                    "video_tweet_id": str(mention.get("video_tweet_id")) if mention.get("video_tweet_id") else None,
+                    "parsed": "true" if parsed else "false",
+                }
+            )
+        return {
+            "cursor_key": self.cursor_key,
+            "since_id": since_id,
+            "ignore_since_id": ignore_since_id,
+            "x_meta": getattr(self.x_client, "last_mentions_meta", None),
+            "count": len(items),
+            "mentions": items,
+        }
+
     def get_since_id(self) -> str | None:
         value = self.redis.get(self.cursor_key)
         return str(value) if value else None

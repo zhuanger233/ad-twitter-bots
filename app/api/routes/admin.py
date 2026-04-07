@@ -16,6 +16,12 @@ def poll_mentions(ignore_since_id: bool = False, reset_cursor: bool = False) -> 
     return {"status": "queued", "ignore_since_id": ignore_since_id, "reset_cursor": reset_cursor}
 
 
+@router.get("/poll-mentions/preview")
+def preview_mentions(ignore_since_id: bool = False, db: Session = Depends(get_db)) -> dict[str, object]:
+    service = MentionPollingService(db)
+    return service.preview_once(ignore_since_id=ignore_since_id)
+
+
 @router.get("/poll-mentions/cursor")
 def get_mentions_cursor(db: Session = Depends(get_db)) -> dict[str, str | None]:
     service = MentionPollingService(db)
