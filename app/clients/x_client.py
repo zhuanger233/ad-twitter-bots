@@ -71,14 +71,17 @@ class XClient:
             min(limit, 100),
             since_id or "-",
         )
-        response = self.client.get_users_mentions(
-            id=bot_user_id,
-            max_results=min(limit, 100),
-            since_id=since_id,
-            expansions=self.EXPANSIONS,
-            tweet_fields=self.TWEET_FIELDS,
-            media_fields=self.MEDIA_FIELDS,
-        )
+        request_kwargs: dict[str, Any] = {
+            "id": bot_user_id,
+            "max_results": min(limit, 100),
+            "expansions": self.EXPANSIONS,
+            "tweet_fields": self.TWEET_FIELDS,
+            "media_fields": self.MEDIA_FIELDS,
+        }
+        if since_id:
+            request_kwargs["since_id"] = since_id
+        response = self.client.get_users_mentions(**request_kwargs)
+        logger.info("X mentions response meta=%s", getattr(response, "meta", None))
         includes = self._normalize_includes(response.includes)
         tweets = response.data or []
         results: list[dict[str, Any]] = []

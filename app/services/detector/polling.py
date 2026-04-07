@@ -20,8 +20,8 @@ class MentionPollingService:
         self.x_client = x_client or XClient()
         self.redis = get_redis_client()
 
-    def poll_once(self) -> int:
-        since_id = self._get_since_id()
+    def poll_once(self, ignore_since_id: bool = False) -> int:
+        since_id = None if ignore_since_id else self.get_since_id()
         logger.info("mention polling started since_id=%s", since_id or "-")
         mentions = self.x_client.fetch_recent_mentions(
             limit=self.settings.mention_lookback_limit,
@@ -61,15 +61,20 @@ class MentionPollingService:
         logger.info("mention polling finished enqueued=%s new_since_id=%s", count, max_seen_id or since_id or "-")
         return count
 
-    def _get_since_id(self) -> str | None:
-        value = self.redis.get(self._cursor_key)
+    def get_since_id(self) -> str | None:
+        value = self.redis.get(self.cursor_key)
         return str(value) if value else None
 
+    def reset_since_id(self) -> bool:
+        deleted = self.redis.delete(self.cursor_key)
+        logger.info("mention polling cursor reset key=%s deleted=%s", self.cursor_key, deleted)
+        return bool(deleted)
+
     def _set_since_id(self, since_id: str) -> None:
-        self.redis.set(self._cursor_key, since_id)
+        self.redis.set(self.cursor_key, since_id)
 
     @property
-    def _cursor_key(self) -> str:
+    def cursor_key(self) -> str:
         bot_user_id = self.x_client.get_bot_user_id()
         return f"x:mentions:since_id:{bot_user_id}"
 

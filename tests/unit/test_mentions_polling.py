@@ -14,6 +14,11 @@ class FakeRedis:
     def set(self, key: str, value: str) -> None:
         self.values[key] = value
 
+    def delete(self, key: str) -> int:
+        existed = key in self.values
+        self.values.pop(key, None)
+        return int(existed)
+
 
 class FakeXClient:
     def __init__(self, mentions: list[dict], bot_user_id: str = "42") -> None:
@@ -89,3 +94,37 @@ def test_poll_once_returns_zero_when_no_new_mentions(monkeypatch) -> None:
     assert fake_x_client.calls == [(20, None)]
     assert fake_redis.values == {}
     assert fake_orchestrator.calls == []
+
+
+def test_poll_once_can_ignore_since_id(monkeypatch) -> None:
+    fake_redis = FakeRedis()
+    fake_redis.set("x:mentions:since_id:42", "100")
+    fake_x_client = FakeXClient(mentions=[{"id": "109", "author_id": "u2", "video_tweet_id": None}])
+    fake_orchestrator = FakeOrchestrator(session=object())
+
+    monkeypatch.setattr("app.services.detector.polling.get_settings", lambda: SimpleNamespace(mention_lookback_limit=20))
+    monkeypatch.setattr("app.services.detector.polling.get_redis_client", lambda: fake_redis)
+    monkeypatch.setitem(sys.modules, "app.services.pipeline.orchestrator", SimpleNamespace(PipelineOrchestrator=lambda session: fake_orchestrator))
+
+    service = MentionPollingService(session=object(), x_client=fake_x_client)
+
+    count = service.poll_once(ignore_since_id=True)
+
+    assert count == 1
+    assert fake_x_client.calls == [(20, None)]
+    assert fake_redis.get("x:mentions:since_id:42") == "109"
+
+
+def test_reset_since_id_deletes_cursor(monkeypatch) -> None:
+    fake_redis = FakeRedis()
+    fake_redis.set("x:mentions:since_id:42", "100")
+    fake_x_client = FakeXClient(mentions=[])
+
+    monkeypatch.setattr("app.services.detector.polling.get_settings", lambda: SimpleNamespace(mention_lookback_limit=20))
+    monkeypatch.setattr("app.services.detector.polling.get_redis_client", lambda: fake_redis)
+
+    service = MentionPollingService(session=object(), x_client=fake_x_client)
+
+    assert service.get_since_id() == "100"
+    assert service.reset_since_id() is True
+    assert service.get_since_id() is None
