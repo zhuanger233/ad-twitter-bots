@@ -150,7 +150,16 @@ class XClient:
 
         source = self._find_video_source(mention, mention.get("includes", {}))
         if not source:
-            raise NoVideoFoundError("No video found in mention, reply parent, or quoted tweet.")
+            source = self._find_conversation_video_source(mention)
+        if not source:
+            logger.info(
+                "no video source found mention_tweet_id=%s conversation_id=%s referenced_tweets=%s attachments=%s",
+                mention.get("id"),
+                mention.get("conversation_id"),
+                mention.get("referenced_tweets"),
+                mention.get("attachments"),
+            )
+            raise NoVideoFoundError("No video found in mention, reply parent, quoted tweet, or conversation root tweet.")
 
         if source["tweet_id"] == str(mention["id"]):
             return {**mention, "resolved_video_tweet_id": source["tweet_id"], "video_url": source["video_url"]}
@@ -194,6 +203,37 @@ class XClient:
             video_url = self._extract_video_url(referenced, includes)
             if video_url:
                 return {"tweet_id": str(ref["id"]), "video_url": video_url}
+        return None
+
+    def _find_conversation_video_source(self, mention: dict[str, Any]) -> dict[str, str] | None:
+        conversation_id = mention.get("conversation_id")
+        mention_id = mention.get("id")
+        if not conversation_id or str(conversation_id) == str(mention_id):
+            return None
+        try:
+            root = self.fetch_tweet_details(str(conversation_id))
+        except Exception as exc:
+            logger.info(
+                "failed to fetch conversation root mention_tweet_id=%s conversation_id=%s error=%s",
+                mention_id,
+                conversation_id,
+                exc,
+            )
+            return None
+        video_url = self._extract_video_url(root, root.get("includes", {}))
+        if video_url:
+            logger.info(
+                "found video from conversation root mention_tweet_id=%s conversation_id=%s",
+                mention_id,
+                conversation_id,
+            )
+            return {"tweet_id": str(conversation_id), "video_url": video_url}
+        logger.info(
+            "conversation root has no video mention_tweet_id=%s conversation_id=%s attachments=%s",
+            mention_id,
+            conversation_id,
+            root.get("attachments"),
+        )
         return None
 
     def _extract_video_url(self, tweet: dict[str, Any], includes: dict[str, dict[str, dict[str, Any]]] | None = None) -> str | None:

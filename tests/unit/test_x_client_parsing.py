@@ -127,3 +127,41 @@ def test_get_bot_user_id_raises_when_username_resolution_fails() -> None:
         assert "resolve X bot user id" in exc.message
     else:
         raise AssertionError("Expected XClientError")
+
+
+def test_resolve_video_source_falls_back_to_conversation_root() -> None:
+    client = make_client()
+    mention = {
+        "id": "30",
+        "conversation_id": "10",
+        "referenced_tweets": [{"id": "20", "type": "replied_to"}],
+        "includes": {
+            "tweets": {"20": {"id": "20"}},
+            "media": {},
+        },
+    }
+    root = {
+        "id": "10",
+        "attachments": {"media_keys": ["m1"]},
+        "includes": {
+            "tweets": {},
+            "media": {
+                "m1": {
+                    "type": "video",
+                    "variants": [
+                        {"content_type": "video/mp4", "bit_rate": 1000, "url": "https://example.com/root.mp4"}
+                    ],
+                }
+            },
+        },
+    }
+
+    def fake_fetch_tweet_details(tweet_id: str):
+        return mention if tweet_id == "30" else root
+
+    client.fetch_tweet_details = fake_fetch_tweet_details
+
+    resolved = client.resolve_video_source("30")
+
+    assert resolved["resolved_video_tweet_id"] == "10"
+    assert resolved["video_url"] == "https://example.com/root.mp4"
