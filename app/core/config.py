@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     max_lines_per_block: int = 2
     min_block_duration: float = 1.2
     max_block_duration: float = 6.0
+    subtitle_font_name: str = "Noto Sans CJK SC"
+    subtitle_font_size: int = 18
 
     admin_token: str = "local-admin-token"
     public_base_url: str = "http://localhost:8000"
