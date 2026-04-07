@@ -107,6 +107,70 @@ class XClient:
         )
         return results
 
+
+    @retry(wait=wait_exponential(min=1, max=10), stop=stop_after_attempt(3), reraise=True)
+    def search_recent_mentions(self, limit: int, since_id: str | None = None) -> list[dict[str, Any]]:
+        bot_user_id = self.get_bot_user_id()
+        username = self.settings.x_bot_username.lstrip("@").strip()
+        if not username:
+            raise XClientError(
+                "X_BOT_USERNAME must be provided for recent search mention fallback.",
+                code=ErrorCode.INTERNAL_ERROR,
+                retryable=False,
+            )
+        query = f"@{username} -is:retweet"
+        logger.info(
+            "searching recent mentions query=%s limit=%s since_id=%s",
+            query,
+            min(limit, 100),
+            since_id or "-",
+        )
+        request_kwargs: dict[str, Any] = {
+            "query": query,
+            "max_results": min(limit, 100),
+            "expansions": self.EXPANSIONS,
+            "tweet_fields": self.TWEET_FIELDS,
+            "media_fields": self.MEDIA_FIELDS,
+        }
+        if since_id:
+            request_kwargs["since_id"] = since_id
+        response = self.client.search_recent_tweets(**request_kwargs)
+        self.last_mentions_meta = getattr(response, "meta", None)
+        logger.info("X recent search response meta=%s", self.last_mentions_meta)
+        includes = self._normalize_includes(response.includes)
+        tweets = response.data or []
+        results: list[dict[str, Any]] = []
+        for tweet in tweets:
+            tweet_payload = tweet.data
+            if tweet_payload.get("author_id") == bot_user_id:
+                continue
+            if not self._tweet_mentions_bot(tweet_payload, bot_user_id, username):
+                continue
+            source = self._find_video_source(tweet_payload, includes)
+            results.append(
+                {
+                    **tweet_payload,
+                    "video_tweet_id": source["tweet_id"] if source else None,
+                    "video_url": source["video_url"] if source else None,
+                }
+            )
+        results.sort(key=lambda item: int(item["id"]))
+        logger.info(
+            "searched mentions count=%s ids=%s",
+            len(results),
+            [str(item["id"]) for item in results],
+        )
+        return results
+
+    def _tweet_mentions_bot(self, tweet: dict[str, Any], bot_user_id: str, username: str) -> bool:
+        mentions = ((tweet.get("entities") or {}).get("mentions") or [])
+        for mention in mentions:
+            if str(mention.get("id")) == str(bot_user_id):
+                return True
+            if str(mention.get("username", "")).lower() == username.lower():
+                return True
+        return f"@{username.lower()}" in str(tweet.get("text", "")).lower()
+
     @retry(wait=wait_exponential(min=1, max=10), stop=stop_after_attempt(3), reraise=True)
     def fetch_tweet_details(self, tweet_id: str) -> dict[str, Any]:
         response = self.client.get_tweet(

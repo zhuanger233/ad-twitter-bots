@@ -23,13 +23,11 @@ class MentionPollingService:
     def poll_once(self, ignore_since_id: bool = False) -> int:
         since_id = None if ignore_since_id else self.get_since_id()
         logger.info("mention polling started since_id=%s", since_id or "-")
-        mentions = self.x_client.fetch_recent_mentions(
-            limit=self.settings.mention_lookback_limit,
-            since_id=since_id,
-        )
+        mentions, source = self._fetch_mentions(since_id)
         if not mentions:
-            logger.info("mention polling finished with no new mentions")
+            logger.info("mention polling finished with no new mentions source=%s", source)
             return 0
+        logger.info("mention polling fetched source=%s count=%s", source, len(mentions))
 
         from app.services.pipeline.orchestrator import PipelineOrchestrator
 
@@ -64,10 +62,7 @@ class MentionPollingService:
 
     def preview_once(self, ignore_since_id: bool = False) -> dict[str, object]:
         since_id = None if ignore_since_id else self.get_since_id()
-        mentions = self.x_client.fetch_recent_mentions(
-            limit=self.settings.mention_lookback_limit,
-            since_id=since_id,
-        )
+        mentions, source = self._fetch_mentions(since_id)
         items: list[dict[str, str | None]] = []
         for mention in mentions:
             parsed = parse_mention_payload(mention)
@@ -84,10 +79,26 @@ class MentionPollingService:
             "cursor_key": self.cursor_key,
             "since_id": since_id,
             "ignore_since_id": ignore_since_id,
+            "source": source,
             "x_meta": getattr(self.x_client, "last_mentions_meta", None),
             "count": len(items),
             "mentions": items,
         }
+
+
+    def _fetch_mentions(self, since_id: str | None) -> tuple[list[dict], str]:
+        mentions = self.x_client.fetch_recent_mentions(
+            limit=self.settings.mention_lookback_limit,
+            since_id=since_id,
+        )
+        if mentions:
+            return mentions, "mentions_timeline"
+        logger.info("mentions timeline returned empty, trying recent search fallback")
+        mentions = self.x_client.search_recent_mentions(
+            limit=self.settings.mention_lookback_limit,
+            since_id=since_id,
+        )
+        return mentions, "recent_search"
 
     def get_since_id(self) -> str | None:
         value = self.redis.get(self.cursor_key)
