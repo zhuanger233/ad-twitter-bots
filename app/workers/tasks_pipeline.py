@@ -22,7 +22,7 @@ from app.services.media.inspector import FFprobeInspector
 from app.services.media.tempfiles import TaskWorkspace
 from app.services.pipeline.router import ASRRouter
 from app.services.reply.tweet_replier import TweetReplier
-from app.services.subtitles.srt_writer import write_srt
+from app.services.subtitles.ass_writer import write_ass
 from app.workers.celery_app import celery_app
 
 
@@ -81,13 +81,13 @@ def run_pipeline(self, task_id: str) -> str:
                 transcription_result = WhisperASRProvider().transcribe(source_path)
             logger.info("pipeline transcription completed task_id=%s asr_engine=%s segments=%s", task.id, task.asr_engine, len(transcription_result.segments))
 
-            srt_path = workspace.child("captions.srt")
-            write_srt(transcription_result, srt_path, settings)
-            logger.info("pipeline wrote subtitles task_id=%s srt_path=%s", task.id, srt_path)
+            subtitle_path = workspace.child("captions.ass")
+            write_ass(transcription_result, subtitle_path, settings)
+            logger.info("pipeline wrote subtitles task_id=%s subtitle_path=%s", task.id, subtitle_path)
             repo.update_stage(task, stage=TaskStage.SUBTITLE_GENERATED)
 
             burned_path = workspace.child("output.mp4")
-            FFmpegBurner().burn(source_path, srt_path, burned_path)
+            FFmpegBurner().burn(source_path, subtitle_path, burned_path)
             logger.info("pipeline burned video task_id=%s output_path=%s", task.id, burned_path)
             task.output_video_path = str(burned_path)
             session.add(task)
