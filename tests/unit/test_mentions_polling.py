@@ -76,6 +76,7 @@ def test_poll_once_uses_since_id_and_updates_cursor(monkeypatch) -> None:
 
     assert count == 2
     assert fake_x_client.calls == [(20, "100")]
+    assert fake_x_client.search_calls == [(20, "100")]
     assert fake_redis.get("x:mentions:since_id:42") == "109"
     assert fake_orchestrator.calls == [
         {"mention_tweet_id": "101", "video_tweet_id": "501", "request_user_id": "u1"},
@@ -98,6 +99,7 @@ def test_poll_once_returns_zero_when_no_new_mentions(monkeypatch) -> None:
 
     assert count == 0
     assert fake_x_client.calls == [(20, None)]
+    assert fake_x_client.search_calls == [(20, None)]
     assert fake_redis.values == {}
     assert fake_orchestrator.calls == []
 
@@ -118,6 +120,7 @@ def test_poll_once_can_ignore_since_id(monkeypatch) -> None:
 
     assert count == 1
     assert fake_x_client.calls == [(20, None)]
+    assert fake_x_client.search_calls == [(20, None)]
     assert fake_redis.get("x:mentions:since_id:42") == "109"
 
 
@@ -159,4 +162,31 @@ def test_poll_once_falls_back_to_recent_search_when_mentions_timeline_empty(monk
     assert fake_redis.get("x:mentions:since_id:42") == "110"
     assert fake_orchestrator.calls == [
         {"mention_tweet_id": "110", "video_tweet_id": "900", "request_user_id": "u3"}
+    ]
+
+
+def test_poll_once_merges_timeline_and_recent_search(monkeypatch) -> None:
+    fake_redis = FakeRedis()
+    fake_redis.set("x:mentions:since_id:42", "100")
+    fake_x_client = FakeXClient(
+        mentions=[{"id": "101", "author_id": "u1", "video_tweet_id": "501"}],
+        search_mentions=[{"id": "111", "author_id": "u9", "video_tweet_id": "901"}],
+    )
+    fake_orchestrator = FakeOrchestrator(session=object())
+
+    monkeypatch.setattr("app.services.detector.polling.get_settings", lambda: SimpleNamespace(mention_lookback_limit=20))
+    monkeypatch.setattr("app.services.detector.polling.get_redis_client", lambda: fake_redis)
+    monkeypatch.setitem(sys.modules, "app.services.pipeline.orchestrator", SimpleNamespace(PipelineOrchestrator=lambda session: fake_orchestrator))
+
+    service = MentionPollingService(session=object(), x_client=fake_x_client)
+
+    count = service.poll_once()
+
+    assert count == 2
+    assert fake_x_client.calls == [(20, "100")]
+    assert fake_x_client.search_calls == [(20, "100")]
+    assert fake_redis.get("x:mentions:since_id:42") == "111"
+    assert fake_orchestrator.calls == [
+        {"mention_tweet_id": "101", "video_tweet_id": "501", "request_user_id": "u1"},
+        {"mention_tweet_id": "111", "video_tweet_id": "901", "request_user_id": "u9"},
     ]

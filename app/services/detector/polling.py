@@ -87,18 +87,40 @@ class MentionPollingService:
 
 
     def _fetch_mentions(self, since_id: str | None) -> tuple[list[dict], str]:
-        mentions = self.x_client.fetch_recent_mentions(
+        timeline_mentions = self.x_client.fetch_recent_mentions(
             limit=self.settings.mention_lookback_limit,
             since_id=since_id,
         )
-        if mentions:
-            return mentions, "mentions_timeline"
-        logger.info("mentions timeline returned empty, trying recent search fallback")
-        mentions = self.x_client.search_recent_mentions(
-            limit=self.settings.mention_lookback_limit,
-            since_id=since_id,
+        try:
+            search_mentions = self.x_client.search_recent_mentions(
+                limit=self.settings.mention_lookback_limit,
+                since_id=since_id,
+            )
+        except Exception as exc:
+            logger.info("recent search fallback failed error=%s", exc)
+            search_mentions = []
+
+        merged: dict[str, dict] = {}
+        for mention in timeline_mentions + search_mentions:
+            merged[str(mention["id"])] = mention
+        mentions = sorted(merged.values(), key=lambda item: int(item["id"]))
+
+        if timeline_mentions and search_mentions:
+            source = "mentions_timeline+recent_search"
+        elif timeline_mentions:
+            source = "mentions_timeline"
+        elif search_mentions:
+            source = "recent_search"
+        else:
+            source = "none"
+        logger.info(
+            "merged mention sources timeline_count=%s search_count=%s merged_count=%s source=%s",
+            len(timeline_mentions),
+            len(search_mentions),
+            len(mentions),
+            source,
         )
-        return mentions, "recent_search"
+        return mentions, source
 
     def get_since_id(self) -> str | None:
         value = self.redis.get(self.cursor_key)
