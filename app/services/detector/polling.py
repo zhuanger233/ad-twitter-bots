@@ -99,24 +99,33 @@ class MentionPollingService:
         except Exception as exc:
             logger.info("recent search fallback failed error=%s", exc)
             search_mentions = []
+        try:
+            v1_search_mentions = self.x_client.search_recent_mentions_v1(
+                limit=self.settings.mention_lookback_limit,
+                since_id=since_id,
+            )
+        except Exception as exc:
+            logger.info("v1 recent search fallback failed error=%s", exc)
+            v1_search_mentions = []
 
         merged: dict[str, dict] = {}
-        for mention in timeline_mentions + search_mentions:
+        for mention in timeline_mentions + search_mentions + v1_search_mentions:
             merged[str(mention["id"])] = mention
         mentions = sorted(merged.values(), key=lambda item: int(item["id"]))
 
-        if timeline_mentions and search_mentions:
-            source = "mentions_timeline+recent_search"
-        elif timeline_mentions:
-            source = "mentions_timeline"
-        elif search_mentions:
-            source = "recent_search"
-        else:
-            source = "none"
+        source_parts = []
+        if timeline_mentions:
+            source_parts.append("mentions_timeline")
+        if search_mentions:
+            source_parts.append("recent_search")
+        if v1_search_mentions:
+            source_parts.append("v1_search")
+        source = "+".join(source_parts) if source_parts else "none"
         logger.info(
-            "merged mention sources timeline_count=%s search_count=%s merged_count=%s source=%s",
+            "merged mention sources timeline_count=%s search_count=%s v1_search_count=%s merged_count=%s source=%s",
             len(timeline_mentions),
             len(search_mentions),
+            len(v1_search_mentions),
             len(mentions),
             source,
         )

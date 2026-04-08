@@ -165,6 +165,64 @@ class XClient:
         )
         return results
 
+    def _normalize_v1_status(self, status: Any) -> dict[str, Any] | None:
+        payload = getattr(status, "_json", None) or {}
+        status_id = payload.get("id_str") or str(payload.get("id")) if payload.get("id") else None
+        if not status_id:
+            return None
+        author = payload.get("user") or {}
+        author_id = author.get("id_str") or (str(author.get("id")) if author.get("id") else None)
+        full_text = payload.get("full_text") or payload.get("text") or ""
+        bot_user_id = self.get_bot_user_id()
+        username = self.settings.x_bot_username.lstrip("@").strip()
+        if author_id == bot_user_id:
+            return None
+        if not self._tweet_mentions_bot(
+            {
+                "text": full_text,
+                "entities": {"mentions": self._normalize_v1_mentions(payload)},
+            },
+            bot_user_id,
+            username,
+        ):
+            return None
+
+        video_url = self._extract_video_url_from_v1_status(payload)
+        quoted_id = payload.get("quoted_status_id_str")
+        reply_id = payload.get("in_reply_to_status_id_str")
+        video_tweet_id = status_id if video_url else quoted_id or reply_id
+        return {
+            "id": status_id,
+            "author_id": author_id,
+            "conversation_id": reply_id or quoted_id or status_id,
+            "referenced_tweets": ([{"type": "quoted", "id": quoted_id}] if quoted_id else []) + ([{"type": "replied_to", "id": reply_id}] if reply_id else []),
+            "entities": {"mentions": self._normalize_v1_mentions(payload)},
+            "video_tweet_id": video_tweet_id,
+            "video_url": video_url,
+            "text": full_text,
+        }
+
+    def _normalize_v1_mentions(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        mentions = ((payload.get("entities") or {}).get("user_mentions") or [])
+        normalized: list[dict[str, Any]] = []
+        for mention in mentions:
+            mention_id = mention.get("id_str") or (str(mention.get("id")) if mention.get("id") else None)
+            normalized.append({"id": mention_id, "username": mention.get("screen_name")})
+        return normalized
+
+    def _extract_video_url_from_v1_status(self, payload: dict[str, Any]) -> str | None:
+        media_items = ((payload.get("extended_entities") or {}).get("media") or [])
+        for media in media_items:
+            if media.get("type") not in {"video", "animated_gif"}:
+                continue
+            variants = ((media.get("video_info") or {}).get("variants") or [])
+            best = self._pick_best_variant(variants)
+            if best:
+                return best
+            if media.get("media_url_https"):
+                return str(media["media_url_https"])
+        return None
+
     def _filter_since_id(self, tweets: list[dict[str, Any]], since_id: str | None) -> list[dict[str, Any]]:
         if not since_id:
             return tweets
@@ -187,6 +245,41 @@ class XClient:
             if str(mention.get("username", "")).lower() == username.lower():
                 return True
         return f"@{username.lower()}" in str(tweet.get("text", "")).lower()
+
+
+    @retry(wait=wait_exponential(min=1, max=10), stop=stop_after_attempt(3), reraise=True)
+    def search_recent_mentions_v1(self, limit: int, since_id: str | None = None) -> list[dict[str, Any]]:
+        username = self.settings.x_bot_username.lstrip("@").strip()
+        if not username:
+            raise XClientError(
+                "X_BOT_USERNAME must be provided for v1 search mention fallback.",
+                code=ErrorCode.INTERNAL_ERROR,
+                retryable=False,
+            )
+        query = f"@{username} -filter:retweets"
+        logger.info(
+            "searching v1 mentions query=%s limit=%s since_id=%s",
+            query,
+            min(limit, 100),
+            since_id or "-",
+        )
+        statuses = self.api.search_tweets(
+            q=query,
+            count=min(limit, 100),
+            result_type="recent",
+            tweet_mode="extended",
+        )
+        self.last_mentions_meta = {"result_count": len(statuses), "source": "v1_search"}
+        results = [self._normalize_v1_status(status) for status in statuses]
+        results = [item for item in results if item is not None]
+        results = self._filter_since_id(results, since_id)
+        results.sort(key=lambda item: int(item["id"]))
+        logger.info(
+            "searched v1 mentions count=%s ids=%s",
+            len(results),
+            [str(item["id"]) for item in results],
+        )
+        return results
 
     @retry(wait=wait_exponential(min=1, max=10), stop=stop_after_attempt(3), reraise=True)
     def fetch_tweet_details(self, tweet_id: str) -> dict[str, Any]:

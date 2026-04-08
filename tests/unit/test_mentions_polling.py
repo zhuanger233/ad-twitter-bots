@@ -21,12 +21,14 @@ class FakeRedis:
 
 
 class FakeXClient:
-    def __init__(self, mentions: list[dict], bot_user_id: str = "42", search_mentions: list[dict] | None = None) -> None:
+    def __init__(self, mentions: list[dict], bot_user_id: str = "42", search_mentions: list[dict] | None = None, v1_search_mentions: list[dict] | None = None) -> None:
         self.mentions = mentions
         self.search_mentions = search_mentions or []
+        self.v1_search_mentions = v1_search_mentions or []
         self.bot_user_id = bot_user_id
         self.calls: list[tuple[int, str | None]] = []
         self.search_calls: list[tuple[int, str | None]] = []
+        self.v1_search_calls: list[tuple[int, str | None]] = []
 
     def get_bot_user_id(self) -> str:
         return self.bot_user_id
@@ -38,6 +40,10 @@ class FakeXClient:
     def search_recent_mentions(self, limit: int, since_id: str | None = None) -> list[dict]:
         self.search_calls.append((limit, since_id))
         return list(self.search_mentions)
+
+    def search_recent_mentions_v1(self, limit: int, since_id: str | None = None) -> list[dict]:
+        self.v1_search_calls.append((limit, since_id))
+        return list(self.v1_search_mentions)
 
 
 class FakeOrchestrator:
@@ -77,6 +83,9 @@ def test_poll_once_uses_since_id_and_updates_cursor(monkeypatch) -> None:
     assert count == 2
     assert fake_x_client.calls == [(20, "100")]
     assert fake_x_client.search_calls == [(20, "100")]
+    assert fake_x_client.v1_search_calls == [(20, "100")]
+    assert fake_x_client.v1_search_calls == [(20, "100")]
+    assert fake_x_client.v1_search_calls == [(20, "100")]
     assert fake_redis.get("x:mentions:since_id:42") == "109"
     assert fake_orchestrator.calls == [
         {"mention_tweet_id": "101", "video_tweet_id": "501", "request_user_id": "u1"},
@@ -100,6 +109,8 @@ def test_poll_once_returns_zero_when_no_new_mentions(monkeypatch) -> None:
     assert count == 0
     assert fake_x_client.calls == [(20, None)]
     assert fake_x_client.search_calls == [(20, None)]
+    assert fake_x_client.v1_search_calls == [(20, None)]
+    assert fake_x_client.v1_search_calls == [(20, None)]
     assert fake_redis.values == {}
     assert fake_orchestrator.calls == []
 
@@ -189,4 +200,32 @@ def test_poll_once_merges_timeline_and_recent_search(monkeypatch) -> None:
     assert fake_orchestrator.calls == [
         {"mention_tweet_id": "101", "video_tweet_id": "501", "request_user_id": "u1"},
         {"mention_tweet_id": "111", "video_tweet_id": "901", "request_user_id": "u9"},
+    ]
+
+
+def test_poll_once_uses_v1_search_fallback_when_v2_sources_do_not_have_new_mentions(monkeypatch) -> None:
+    fake_redis = FakeRedis()
+    fake_redis.set("x:mentions:since_id:42", "100")
+    fake_x_client = FakeXClient(
+        mentions=[],
+        search_mentions=[],
+        v1_search_mentions=[{"id": "115", "author_id": "u5", "video_tweet_id": None}],
+    )
+    fake_orchestrator = FakeOrchestrator(session=object())
+
+    monkeypatch.setattr("app.services.detector.polling.get_settings", lambda: SimpleNamespace(mention_lookback_limit=20))
+    monkeypatch.setattr("app.services.detector.polling.get_redis_client", lambda: fake_redis)
+    monkeypatch.setitem(sys.modules, "app.services.pipeline.orchestrator", SimpleNamespace(PipelineOrchestrator=lambda session: fake_orchestrator))
+
+    service = MentionPollingService(session=object(), x_client=fake_x_client)
+
+    count = service.poll_once()
+
+    assert count == 1
+    assert fake_x_client.calls == [(20, "100")]
+    assert fake_x_client.search_calls == [(20, "100")]
+    assert fake_x_client.v1_search_calls == [(20, "100")]
+    assert fake_redis.get("x:mentions:since_id:42") == "115"
+    assert fake_orchestrator.calls == [
+        {"mention_tweet_id": "115", "video_tweet_id": None, "request_user_id": "u5"}
     ]
