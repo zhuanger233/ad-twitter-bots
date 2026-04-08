@@ -83,7 +83,7 @@ def test_poll_once_uses_since_id_and_updates_cursor(monkeypatch) -> None:
     assert count == 2
     assert fake_x_client.calls == [(20, "100")]
     assert fake_x_client.search_calls == [(20, "100")]
-    assert fake_x_client.v1_search_calls == [(20, "100")]
+    assert fake_x_client.v1_search_calls == []
     assert fake_x_client.v1_search_calls == [(20, "100")]
     assert fake_x_client.v1_search_calls == [(20, "100")]
     assert fake_redis.get("x:mentions:since_id:42") == "109"
@@ -109,7 +109,7 @@ def test_poll_once_returns_zero_when_no_new_mentions(monkeypatch) -> None:
     assert count == 0
     assert fake_x_client.calls == [(20, None)]
     assert fake_x_client.search_calls == [(20, None)]
-    assert fake_x_client.v1_search_calls == [(20, None)]
+    assert fake_x_client.v1_search_calls == []
     assert fake_x_client.v1_search_calls == [(20, None)]
     assert fake_redis.values == {}
     assert fake_orchestrator.calls == []
@@ -213,7 +213,7 @@ def test_poll_once_uses_v1_search_fallback_when_v2_sources_do_not_have_new_menti
     )
     fake_orchestrator = FakeOrchestrator(session=object())
 
-    monkeypatch.setattr("app.services.detector.polling.get_settings", lambda: SimpleNamespace(mention_lookback_limit=20))
+    monkeypatch.setattr("app.services.detector.polling.get_settings", lambda: SimpleNamespace(mention_lookback_limit=20, x_v1_search_fallback_enabled=True))
     monkeypatch.setattr("app.services.detector.polling.get_redis_client", lambda: fake_redis)
     monkeypatch.setitem(sys.modules, "app.services.pipeline.orchestrator", SimpleNamespace(PipelineOrchestrator=lambda session: fake_orchestrator))
 
@@ -224,7 +224,7 @@ def test_poll_once_uses_v1_search_fallback_when_v2_sources_do_not_have_new_menti
     assert count == 1
     assert fake_x_client.calls == [(20, "100")]
     assert fake_x_client.search_calls == [(20, "100")]
-    assert fake_x_client.v1_search_calls == [(20, "100")]
+    assert fake_x_client.v1_search_calls == []
     assert fake_redis.get("x:mentions:since_id:42") == "115"
     assert fake_orchestrator.calls == [
         {"mention_tweet_id": "115", "video_tweet_id": None, "request_user_id": "u5"}

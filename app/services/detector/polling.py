@@ -99,13 +99,16 @@ class MentionPollingService:
         except Exception as exc:
             logger.info("recent search fallback failed error=%s", exc)
             search_mentions = []
-        try:
-            v1_search_mentions = self.x_client.search_recent_mentions_v1(
-                limit=self.settings.mention_lookback_limit,
-                since_id=since_id,
-            )
-        except Exception as exc:
-            logger.info("v1 recent search fallback failed error=%s", exc)
+        if getattr(self.settings, "x_v1_search_fallback_enabled", False):
+            try:
+                v1_search_mentions = self.x_client.search_recent_mentions_v1(
+                    limit=self.settings.mention_lookback_limit,
+                    since_id=since_id,
+                )
+            except Exception as exc:
+                logger.info("v1 recent search fallback failed error=%s", exc)
+                v1_search_mentions = []
+        else:
             v1_search_mentions = []
 
         merged: dict[str, dict] = {}

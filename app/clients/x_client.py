@@ -247,7 +247,6 @@ class XClient:
         return f"@{username.lower()}" in str(tweet.get("text", "")).lower()
 
 
-    @retry(wait=wait_exponential(min=1, max=10), stop=stop_after_attempt(3), reraise=True)
     def search_recent_mentions_v1(self, limit: int, since_id: str | None = None) -> list[dict[str, Any]]:
         username = self.settings.x_bot_username.lstrip("@").strip()
         if not username:
