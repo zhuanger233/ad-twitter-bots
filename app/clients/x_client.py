@@ -99,6 +99,7 @@ class XClient:
                     "video_url": source["video_url"] if source else None,
                 }
             )
+        results = self._filter_since_id(results, since_id)
         results.sort(key=lambda item: int(item["id"]))
         logger.info(
             "fetched mentions count=%s ids=%s",
@@ -128,6 +129,7 @@ class XClient:
         request_kwargs: dict[str, Any] = {
             "query": query,
             "max_results": min(limit, 100),
+            "sort_order": "recency",
             "expansions": self.EXPANSIONS,
             "tweet_fields": self.TWEET_FIELDS,
             "media_fields": self.MEDIA_FIELDS,
@@ -154,6 +156,7 @@ class XClient:
                     "video_url": source["video_url"] if source else None,
                 }
             )
+        results = self._filter_since_id(results, since_id)
         results.sort(key=lambda item: int(item["id"]))
         logger.info(
             "searched mentions count=%s ids=%s",
@@ -161,6 +164,20 @@ class XClient:
             [str(item["id"]) for item in results],
         )
         return results
+
+    def _filter_since_id(self, tweets: list[dict[str, Any]], since_id: str | None) -> list[dict[str, Any]]:
+        if not since_id:
+            return tweets
+        filtered = [tweet for tweet in tweets if int(str(tweet["id"])) > int(since_id)]
+        if len(filtered) != len(tweets):
+            logger.info(
+                "filtered stale mentions since_id=%s before=%s after=%s removed_ids=%s",
+                since_id,
+                len(tweets),
+                len(filtered),
+                [str(tweet["id"]) for tweet in tweets if int(str(tweet["id"])) <= int(since_id)],
+            )
+        return filtered
 
     def _tweet_mentions_bot(self, tweet: dict[str, Any], bot_user_id: str, username: str) -> bool:
         mentions = ((tweet.get("entities") or {}).get("mentions") or [])

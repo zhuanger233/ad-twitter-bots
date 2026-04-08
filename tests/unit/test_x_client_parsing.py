@@ -165,3 +165,16 @@ def test_resolve_video_source_falls_back_to_conversation_root() -> None:
 
     assert resolved["resolved_video_tweet_id"] == "10"
     assert resolved["video_url"] == "https://example.com/root.mp4"
+
+
+def test_filter_since_id_removes_stale_mentions() -> None:
+    client = make_client()
+    tweets = [
+        {"id": "100"},
+        {"id": "101"},
+        {"id": "105"},
+    ]
+
+    filtered = client._filter_since_id(tweets, "101")
+
+    assert filtered == [{"id": "105"}]
